@@ -1,6 +1,10 @@
+import numpy as np
 import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
 
 def preprocesamiento(dataset):
@@ -106,3 +110,106 @@ def preprocesamiento(dataset):
 
     return X_train_scaled, X_test_scaled, y_train, y_test, X_candidate_scaled
 
+
+def calcular_metricas(model, X, y):
+    """
+    Esta función calcula las métricas de desempeño del modelo, ya sea para train o test
+
+    Parámetros:
+    - model (objeto de modelo): Modelo entrenado
+    - X (array-like): Conjunto de características (entradas)
+    - y (array-like): Valores reales (etiquetas)
+
+    Retorna:
+    - CM (ndarray): Matriz de confusión (valores reales vs predichos)
+    - accuracy (float): Exactitud global del modelo
+    - precision (float): Precisión en la clasificación de exoplanetas confirmados
+    - recall (float): Sensibilidad o tasa de verdaderos positivos
+    - f1 (float): Media armónica entre precisión y recall.
+    - roc_auc (float): Área bajo la curva ROC, que mide la capacidad de discriminación del modelo
+    """
+    #Probabilidades predichas
+    y_prob = model.predict(X, verbose=0).flatten()
+
+    #Predicción de clase
+    y_pred = (y_prob > 0.5).astype(int)
+    y_true = y.flatten() if y.ndim > 1 else y
+
+    CM = confusion_matrix(y_true, y_pred)
+    accuracy = accuracy_score(y_true, y_pred)
+    precision = precision_score(y_true, y_pred, zero_division=0)
+    recall = recall_score(y_true, y_pred, zero_division=0)
+    f1 = f1_score(y_true, y_pred, zero_division=0)
+    roc_auc = roc_auc_score(y_true, y_prob)
+
+    return CM, accuracy, precision, recall, f1, roc_auc
+
+
+def evaluar_modelo(model, X_train, y_train, X_test, y_test, dataset):
+    """
+    Esta función evalúa el desempeño del modelo en train y test, generando las matrices de confusión junto con las métricas de desempeño
+
+    Parámetros:
+    - model (objeto de modelo): Modelo entrenado
+    - X_train (array-like): Conjunto de características de entrenamiento
+    - y_train (array-like): Etiquetas de entrenamiento
+    - X_test (array-like): Conjunto de características de prueba
+    - y_test (array-like): Etiquetas de prueba
+    - dataset (str): Nombre del conjunto de datos
+    """
+    cm_train, acc_train, prec_train, rec_train, f1_train, roc_train = calcular_metricas(model, X_train, y_train)
+    cm_test, acc_test, prec_test, rec_test, f1_test, roc_test = calcular_metricas(model, X_test, y_test)
+
+    clases = ['FALSE POSITIVE', 'CONFIRMED']
+
+    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+
+    sns.heatmap(cm_train, annot=True, fmt='d', cmap='BuPu',
+                xticklabels=clases, yticklabels=clases,
+                ax=ax[0], annot_kws={'size': 10})
+    ax[0].set_title(f'{dataset} - Train', fontsize=14)
+    ax[0].set_xlabel('Predicho', fontsize=12)
+    ax[0].set_ylabel('Real', fontsize=12)
+    ax[0].tick_params(labelsize=11)
+    ax[0].text(0.45, -0.12, f'\nAccuracy: {acc_train:.4f} | Precisión: {prec_train:.4f}\nRecall: {rec_train:.4f} | F1-Score: {f1_train:.4f}\nROC-AUC: {roc_train:.4f}',
+            transform=ax[0].transAxes, ha='center', fontsize=11, va='top')
+
+    sns.heatmap(cm_test, annot=True, fmt='d', cmap='BuPu',
+                xticklabels=clases, yticklabels=clases,
+                ax=ax[1], annot_kws={'size': 10})
+    ax[1].set_title(f'{dataset} - Test', fontsize=14)
+    ax[1].set_xlabel('Predicho', fontsize=12)
+    ax[1].set_ylabel('Real', fontsize=12)
+    ax[1].tick_params(labelsize=11)
+    ax[1].text(0.45, -0.12, f'\nAccuracy: {acc_test:.4f} | Precisión: {prec_test:.4f}\nRecall: {rec_test:.4f} | F1-Score: {f1_test:.4f}\nROC-AUC: {roc_test:.4f}',
+            transform=ax[1].transAxes, ha='center', fontsize=11, va='top')
+
+    plt.tight_layout()
+    plt.subplots_adjust(wspace=0.25) 
+    plt.savefig(f'CM_{dataset}.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def predecir_exoplanetas(model, X):
+    """
+    Esta función realiza predicciones con el modelo entrenado sobre un conjunto de datos,
+    devolviendo las probabilidades de que un objeto sea un exoplaneta confirmado o un falso positivo
+
+    Parámetros:
+    - model (objeto de modelo): Modelo entrenado
+    - X (array-like): Conjunto de características sobre las que se realizarán las predicciones
+
+    Retorna:
+    - prob_fp (ndarray): Probabilidad de que el objeto sea un falso positivo
+    - prob_confirmed (ndarray): Probabilidad estimada de que el objeto sea un exoplaneta
+    - predicciones (ndarray de str): Clases predichas en texto ("FALSE POSITIVE" o "CONFIRMED") para cada muestra
+    """
+    prob_confirmed = model.predict(X).flatten() #Probabilidad de ser CONFIRMED
+    prob_fp = 1 - prob_confirmed #Probabilidad de ser FALSE POSITIVE
+    
+    #Predicciones
+    preds = (prob_confirmed >= 0.5).astype(int)
+    clases = {0: 'FALSE POSITIVE', 1: 'CONFIRMED'}
+    predicciones = np.array([clases[p] for p in preds])
+
+    return prob_fp, prob_confirmed, predicciones
